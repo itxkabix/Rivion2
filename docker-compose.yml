@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: face-emotion-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: riba123
+      POSTGRES_DB: rivion_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U faceuser" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend FastAPI Service
+  backend:
+    build:
+      context: ./backend
+      dockerfile: docker/Dockerfile
+    container_name: face-emotion-backend
+    environment:
+      DATABASE_URL: postgresql://postgres:riba123@postgres:5432/rivion_db
+
+      # AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      # AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      # AWS_S3_BUCKET: ${AWS_S3_BUCKET}
+      PINECONE_API_KEY: ${pcsk_3oTAhS_58SaryDGsjTkjkzajaGD7wzmrAMFAtzuTbkiAyFyBw5ojaYz19AJ2rxFpSbpF4d}
+      PINECONE_ENV: ${us-east-1-aws}
+      PINECONE_INDEX: ${face-emotion}
+
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - ./models:/app/models
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/api/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Frontend React Service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: face-emotion-frontend
+    environment:
+      REACT_APP_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend/src:/app/src
+    command: npm run dev
+
+  # Redis for caching (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: face-emotion-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+volumes:
+  postgres_data:
+  redis_data:
+
+
+networks:
+  default:
+    name: face-emotion-network
